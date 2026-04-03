@@ -1,0 +1,12 @@
+#!/bin/bash
+echo ""
+echo "🛠  InvoiceHub — Dev mode"
+echo "================================"
+echo "Server: http://localhost:3456"
+echo "Client: http://localhost:5173  (proxies /api to server)"
+echo ""
+echo "Open TWO terminals and run:"
+echo "  Terminal 1: cd server && npm install && node --watch index.js"
+echo "  Terminal 2: cd client && npm install && npm run dev"
+echo ""
+echo "Or use: npm run dev:server / npm run dev:client"
