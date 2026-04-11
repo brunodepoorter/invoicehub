@@ -65,7 +65,8 @@ export interface InvoiceItem {
   status: InvoiceStatus
   ocr: OcrResult
   rule: AutoFillRule | null
-  splitMatches: SplitMatch[]
+  matchedExpense: Expense | null   // single-expense match (non-Google Ads)
+  splitMatches: SplitMatch[]       // Google Ads split mode
   splitSumOk: boolean | null
   errorMsg: string
   submitMsg: string
