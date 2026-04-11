@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronRight, ChevronDown, RefreshCw, ExternalLink, AlertTriangle, Zap } from 'lucide-react'
+import { ChevronRight, ChevronDown, RefreshCw, ExternalLink, AlertTriangle, Zap, Lock } from 'lucide-react'
 import type { Expense, Report } from '../lib/types'
 import { matchRule, TAG1_ID, KOSTENPLAATS_FIELD_ID, KOSTENPLAATS_OPTION_ID } from '../lib/rules'
 import { updateExpense, assignToReport } from '../lib/api'
@@ -11,16 +11,17 @@ interface Props {
   unreported: Expense[]
   allExpenses: Expense[]
   loading: boolean
+  categoryMap: Record<string, number>
   onRefresh: () => void
 }
 
-export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, loading, onRefresh }: Props) {
+export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, loading, categoryMap, onRefresh }: Props) {
   const [search, setSearch] = useState('')
   const [openSections, setOpenSections] = useState<Set<string>>(new Set(['unreported']))
   const [autofilling, setAutofilling] = useState<Set<number>>(new Set())
   const [assigning, setAssigning] = useState<Set<number>>(new Set())
+  const [errors, setErrors] = useState<Record<number, string>>({})
 
-  // Open all report sections when loaded
   React.useEffect(() => {
     if (reports.length > 0) {
       setOpenSections(prev => {
@@ -37,7 +38,7 @@ export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, load
   }).length
 
   const q = search.toLowerCase()
-  const filterExp = (e: Expense) => !q || (e.description||'').toLowerCase().includes(q) || String(e.amount).includes(q)
+  const filterExp = (e: Expense) => !q || (e.description || '').toLowerCase().includes(q) || String(e.amount).includes(q)
 
   function toggle(key: string) {
     setOpenSections(prev => {
@@ -47,32 +48,50 @@ export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, load
     })
   }
 
+  function setError(expId: number, msg: string) {
+    setErrors(prev => ({ ...prev, [expId]: msg }))
+    setTimeout(() => setErrors(prev => { const n = { ...prev }; delete n[expId]; return n }), 8000)
+  }
+
+  function buildAutoFill(rule: NonNullable<ReturnType<typeof matchRule>>) {
+    const catId = categoryMap[rule.category]
+    return {
+      ...(catId ? { category_id: catId } : { category: rule.category }),
+      tag1_id: TAG1_ID,
+      field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
+    }
+  }
+
   async function handleAutoFill(expense: Expense) {
     const rule = matchRule(expense.description)
     if (!rule) return
     setAutofilling(prev => new Set(prev).add(expense.id))
+    setErrors(prev => { const n = { ...prev }; delete n[expense.id]; return n })
     try {
-      await updateExpense(orgId, expense.id, {
-        category: rule.category,
-        tag1_id: TAG1_ID,
-        field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
-      })
+      await updateExpense(orgId, expense.id, buildAutoFill(rule))
       onRefresh()
-    } catch (e: any) { alert('Auto-fill failed: ' + e.message) }
-    finally { setAutofilling(prev => { const n = new Set(prev); n.delete(expense.id); return n }) }
+    } catch (e: any) {
+      setError(expense.id, e.message)
+    } finally {
+      setAutofilling(prev => { const n = new Set(prev); n.delete(expense.id); return n })
+    }
   }
 
   async function handleAssign(expense: Expense, reportId: number) {
     setAssigning(prev => new Set(prev).add(expense.id))
+    setErrors(prev => { const n = { ...prev }; delete n[expense.id]; return n })
     try {
       await assignToReport(orgId, expense.id, reportId)
       onRefresh()
-    } catch (e: any) { alert('Assign failed: ' + e.message) }
-    finally { setAssigning(prev => { const n = new Set(prev); n.delete(expense.id); return n }) }
+    } catch (e: any) {
+      setError(expense.id, e.message)
+    } finally {
+      setAssigning(prev => { const n = new Set(prev); n.delete(expense.id); return n })
+    }
   }
 
   const filteredUnreported = unreported.filter(filterExp)
-  const unreportedTotal = filteredUnreported.reduce((s, e) => s + parseFloat(String(e.amount)||'0'), 0)
+  const unreportedTotal = filteredUnreported.reduce((s, e) => s + parseFloat(String(e.amount) || '0'), 0)
 
   return (
     <section>
@@ -146,8 +165,11 @@ export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, load
                     <tbody>
                       {filteredUnreported.map(e => (
                         <UnreportedRow key={e.id} expense={e} reports={reports}
-                          isAutofilling={autofilling.has(e.id)} isAssigning={assigning.has(e.id)}
-                          onAutoFill={() => handleAutoFill(e)} onAssign={rId => handleAssign(e, rId)} />
+                          isAutofilling={autofilling.has(e.id)}
+                          isAssigning={assigning.has(e.id)}
+                          errorMsg={errors[e.id] || ''}
+                          onAutoFill={() => handleAutoFill(e)}
+                          onAssign={rId => handleAssign(e, rId)} />
                       ))}
                     </tbody>
                   </table>
@@ -159,14 +181,16 @@ export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, load
           {/* Reports */}
           {reports.map(report => {
             const exps = (report.expenses || []).filter(filterExp)
-            const total = exps.reduce((s, e) => s + parseFloat(String(e.amount)||'0'), 0)
+            const total = exps.reduce((s, e) => s + parseFloat(String(e.amount) || '0'), 0)
             const key = `report-${report.id}`
             const isOpen = openSections.has(key)
             return (
               <div key={report.id} className="rounded-lg border border-border bg-card shadow-card overflow-hidden">
                 <button onClick={() => toggle(key)}
                   className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-secondary/30 transition-colors">
-                  {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                  {isOpen
+                    ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                    : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                   <div className="flex-1 min-w-0 flex items-center gap-2">
                     <span className="font-medium text-foreground font-display text-sm truncate">{report.name || `Report ${report.id}`}</span>
                     {report.user?.fullName && <span className="text-xs text-muted-foreground">— {report.user.fullName}</span>}
@@ -205,54 +229,107 @@ export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, load
 }
 
 function Th({ children, center }: { children: React.ReactNode; center?: boolean }) {
-  return <th className={cn('text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-2 first:pl-5', center ? 'text-center' : 'text-left')}>{children}</th>
+  return (
+    <th className={cn('text-xs font-semibold text-muted-foreground uppercase tracking-wide px-4 py-2 first:pl-5', center ? 'text-center' : 'text-left')}>
+      {children}
+    </th>
+  )
 }
 
 function Dot({ ok, label }: { ok: boolean; label?: string }) {
-  if (ok) return <div className="flex flex-col items-center gap-0.5"><span className="text-success text-sm">✓</span>{label && <span className="text-[10px] text-muted-foreground max-w-[70px] truncate">{label}</span>}</div>
-  return <div className="flex flex-col items-center gap-0.5"><span className="text-warning text-sm">⊗</span><span className="text-[10px] text-warning">Missing</span></div>
+  if (ok) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-success text-sm">✓</span>
+      {label && <span className="text-[10px] text-muted-foreground max-w-[70px] truncate">{label}</span>}
+    </div>
+  )
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-warning text-sm">⊗</span>
+      <span className="text-[10px] text-warning">Missing</span>
+    </div>
+  )
 }
 
-function UnreportedRow({ expense, reports, isAutofilling, isAssigning, onAutoFill, onAssign }: {
-  expense: Expense; reports: Report[]; isAutofilling: boolean; isAssigning: boolean
-  onAutoFill: () => void; onAssign: (rId: number) => void
+function UnreportedRow({ expense, reports, isAutofilling, isAssigning, errorMsg, onAutoFill, onAssign }: {
+  expense: Expense
+  reports: Report[]
+  isAutofilling: boolean
+  isAssigning: boolean
+  errorMsg: string
+  onAutoFill: () => void
+  onAssign: (rId: number) => void
 }) {
-  const { hasCategory, hasKostendrager, hasKostenplaats, hasReceipt } = expenseCompleteness(expense)
+  const completeness = expenseCompleteness(expense)
+  const { hasCategory, hasKostendrager, hasKostenplaats, hasReceipt } = completeness
+  const isComplete = hasCategory && hasKostendrager && hasKostenplaats && hasReceipt
   const rule = matchRule(expense.description)
   const canAutoFill = !!rule && (!hasCategory || !hasKostendrager || !hasKostenplaats)
 
   return (
-    <tr className="border-b border-border hover:bg-secondary/20 last:border-0 align-top">
-      <td className="px-5 py-3 font-medium text-foreground max-w-[180px]"><div className="truncate">{expense.description || '—'}</div></td>
-      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(getExpenseDate(expense))}</td>
-      <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{formatAmount(expense.amount, expense.currency)}</td>
-      <td className="px-4 py-3 text-center"><Dot ok={hasCategory} /></td>
-      <td className="px-4 py-3 text-center"><Dot ok={hasKostendrager} /></td>
-      <td className="px-4 py-3 text-center"><Dot ok={hasKostenplaats} /></td>
-      <td className="px-4 py-3 text-center"><Dot ok={hasReceipt} label={hasReceipt ? '1 file' : undefined} /></td>
-      <td className="px-4 py-3 min-w-[180px]">
-        {canAutoFill ? (
-          <button onClick={onAutoFill} disabled={isAutofilling} className="text-left disabled:opacity-50 hover:opacity-80 group">
-            <div className="text-xs font-semibold text-accent mb-0.5 group-hover:underline">{rule.label}</div>
-            <div className="text-[10px] text-muted-foreground leading-relaxed">
-              Categorie → {rule.category},<br />
-              Kostendrager → MD00 - Algemeen,<br />
-              Kostenplaats → D18JPL - Business Innovation & Marketing competitie
+    <>
+      <tr className="border-b border-border hover:bg-secondary/20 last:border-0 align-top">
+        <td className="px-5 py-3 font-medium text-foreground max-w-[180px]">
+          <div className="truncate">{expense.description || '—'}</div>
+        </td>
+        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(getExpenseDate(expense))}</td>
+        <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{formatAmount(expense.amount, expense.currency)}</td>
+        <td className="px-4 py-3 text-center"><Dot ok={hasCategory} /></td>
+        <td className="px-4 py-3 text-center"><Dot ok={hasKostendrager} /></td>
+        <td className="px-4 py-3 text-center"><Dot ok={hasKostenplaats} /></td>
+        <td className="px-4 py-3 text-center"><Dot ok={hasReceipt} label={hasReceipt ? '1 file' : undefined} /></td>
+
+        {/* Auto-fill */}
+        <td className="px-4 py-3 min-w-[180px]">
+          {canAutoFill ? (
+            <button onClick={onAutoFill} disabled={isAutofilling}
+              className="text-left disabled:opacity-50 hover:opacity-80 group">
+              <div className="flex items-center gap-1 text-xs font-semibold text-accent mb-0.5">
+                <Zap className="h-3 w-3" />
+                <span className="group-hover:underline">{rule.label}</span>
+              </div>
+              <div className="text-[10px] text-muted-foreground leading-relaxed">
+                Categorie → {rule.category},<br />
+                Kostendrager → MD00 - Algemeen,<br />
+                Kostenplaats → D18JPL
+              </div>
+              {isAutofilling && <div className="text-[10px] text-accent mt-0.5">Saving…</div>}
+            </button>
+          ) : hasCategory && hasKostendrager && hasKostenplaats ? (
+            <span className="text-xs text-success">✓ Complete</span>
+          ) : (
+            <span className="text-xs text-muted-foreground">No rule match</span>
+          )}
+        </td>
+
+        {/* Assign to report — only enabled when all 4 items are green */}
+        <td className="px-4 py-3 min-w-[170px]">
+          {isComplete ? (
+            <select disabled={isAssigning}
+              onChange={e => { if (e.target.value) onAssign(parseInt(e.target.value)) }}
+              defaultValue=""
+              className="text-xs px-2 py-1 border border-border rounded-md bg-card text-foreground focus:outline-none disabled:opacity-50 max-w-[160px]">
+              <option value="">Kies rapport...</option>
+              {reports.map(r => (
+                <option key={r.id} value={r.id}>{(r.name || `Report ${r.id}`).substring(0, 35)}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground" title="Complete all 4 fields first">
+              <Lock className="h-3 w-3" />
+              <span>Complete {[!hasCategory && 'categorie', !hasKostendrager && 'kostendrager', !hasKostenplaats && 'kostenplaats', !hasReceipt && 'receipt'].filter(Boolean).join(', ')} first</span>
             </div>
-            {isAutofilling && <div className="text-[10px] text-accent mt-0.5">Saving…</div>}
-          </button>
-        ) : hasCategory && hasKostendrager && hasKostenplaats
-          ? <span className="text-xs text-success">✓ Complete</span>
-          : <span className="text-xs text-muted-foreground">No rule match</span>}
-      </td>
-      <td className="px-4 py-3">
-        <select disabled={isAssigning} onChange={e => { if (e.target.value) onAssign(parseInt(e.target.value)) }} defaultValue=""
-          className="text-xs px-2 py-1 border border-border rounded-md bg-card text-foreground focus:outline-none disabled:opacity-50 max-w-[160px]">
-          <option value="">Kies rapport...</option>
-          {reports.map(r => <option key={r.id} value={r.id}>{(r.name||`Report ${r.id}`).substring(0,35)}</option>)}
-        </select>
-      </td>
-    </tr>
+          )}
+          {isAssigning && <div className="text-[10px] text-accent mt-0.5">Assigning…</div>}
+        </td>
+      </tr>
+      {/* Inline error row */}
+      {errorMsg && (
+        <tr className="border-b border-destructive/20 bg-destructive/5">
+          <td colSpan={9} className="px-5 py-2 text-xs text-destructive">{errorMsg}</td>
+        </tr>
+      )}
+    </>
   )
 }
 
@@ -263,12 +340,14 @@ function ReportRow({ expense }: { expense: Expense }) {
 
   return (
     <tr className="border-b border-border hover:bg-secondary/20 last:border-0">
-      <td className="px-5 py-2.5 font-medium text-foreground max-w-[200px]"><div className="truncate">{expense.description||'—'}</div></td>
+      <td className="px-5 py-2.5 font-medium text-foreground max-w-[200px]">
+        <div className="truncate">{expense.description || '—'}</div>
+      </td>
       <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{formatDate(getExpenseDate(expense))}</td>
       <td className="px-4 py-2.5 font-semibold text-foreground whitespace-nowrap">{formatAmount(expense.amount, expense.currency)}</td>
-      <td className="px-4 py-2.5 text-center"><Dot ok={hasCategory} label={catName.substring(0,12)+'…'} /></td>
-      <td className="px-4 py-2.5 text-center"><Dot ok={hasKostendrager} label={tagName.substring(0,10)+'…'} /></td>
-      <td className="px-4 py-2.5 text-center"><Dot ok={hasKostenplaats} label={hasKostenplaats ? 'D18JPL - Bu…' : undefined} /></td>
+      <td className="px-4 py-2.5 text-center"><Dot ok={hasCategory} label={catName ? catName.substring(0, 12) + (catName.length > 12 ? '…' : '') : undefined} /></td>
+      <td className="px-4 py-2.5 text-center"><Dot ok={hasKostendrager} label={tagName.substring(0, 10) + '…'} /></td>
+      <td className="px-4 py-2.5 text-center"><Dot ok={hasKostenplaats} label={hasKostenplaats ? 'D18JPL' : undefined} /></td>
       <td className="px-4 py-2.5 text-center"><Dot ok={hasReceipt} label={hasReceipt ? '1 file' : undefined} /></td>
     </tr>
   )

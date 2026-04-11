@@ -71,6 +71,17 @@ app.get('/api/organizations/:orgId/users/:userId/expenses', async (req, res) => 
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Categories ────────────────────────────────────────────────────────────────
+app.get('/api/organizations/:orgId/categories', async (req, res) => {
+  try {
+    // Try v41 endpoint names; fall back gracefully
+    let data;
+    try { data = await dFetch(`${BASE}/api/v41/organizations/${req.params.orgId}/expense_categories?limit=200`); }
+    catch { data = await dFetch(`${BASE}/api/v4/organizations/${req.params.orgId}/categories?limit=200`); }
+    res.json(data);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Org-wide expenses ─────────────────────────────────────────────────────────
 app.get('/api/organizations/:orgId/expenses', async (req, res) => {
   try {
@@ -105,7 +116,8 @@ app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
 app.put('/api/organizations/:orgId/expenses/:expId/report', async (req, res) => {
   try {
     const { reportId } = req.body;
-    const data = await dFetch(`${BASE}/api/v4/organizations/${req.params.orgId}/expenses/${req.params.expId}`, 'PUT', { report: reportId });
+    // Declaree v4 uses report_id in the expense update
+    const data = await dFetch(`${BASE}/api/v4/expenses/${req.params.expId}`, 'PUT', { report_id: reportId });
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

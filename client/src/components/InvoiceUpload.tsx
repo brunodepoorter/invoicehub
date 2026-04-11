@@ -9,10 +9,11 @@ interface Props {
   orgId: number
   allExpenses: Expense[]
   reports: import('../lib/types').Report[]
+  categoryMap: Record<string, number>
   onSubmitDone: () => void
 }
 
-export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Props) {
+export function InvoiceUpload({ orgId, allExpenses, reports, categoryMap, onSubmitDone }: Props) {
   const [items, setItems] = useState<InvoiceItem[]>([])
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -112,18 +113,22 @@ export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Pro
       const b64 = await fileToBase64(item.file)
       const isGSplit = item.splitMatches.length > 0
 
+      // Build auto-fill payload using category_id when available
+      function buildAutoFill(rule: NonNullable<InvoiceItem['rule']>) {
+        const catId = categoryMap[rule.category]
+        return {
+          ...(catId ? { category_id: catId } : { category: rule.category }),
+          tag1_id: TAG1_ID,
+          field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
+        }
+      }
+
       if (isGSplit) {
         // Google Ads: apply receipt + auto-fill to each selected split expense
         const selected = item.splitMatches.filter(m => m.selected)
         for (const m of selected) {
           await uploadReceipt(orgId, m.expense.id, b64, item.file.name, item.file.type)
-          if (item.rule) {
-            await updateExpense(orgId, m.expense.id, {
-              category: item.rule.category,
-              tag1_id: TAG1_ID,
-              field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
-            })
-          }
+          if (item.rule) await updateExpense(orgId, m.expense.id, buildAutoFill(item.rule))
         }
         updateItem(id, {
           status: 'done',
@@ -132,13 +137,7 @@ export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Pro
       } else if (item.matchedExpense) {
         // Standard: upload receipt + auto-fill to matched expense
         await uploadReceipt(orgId, item.matchedExpense.id, b64, item.file.name, item.file.type)
-        if (item.rule) {
-          await updateExpense(orgId, item.matchedExpense.id, {
-            category: item.rule.category,
-            tag1_id: TAG1_ID,
-            field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
-          })
-        }
+        if (item.rule) await updateExpense(orgId, item.matchedExpense.id, buildAutoFill(item.rule))
         updateItem(id, { status: 'done', submitMsg: 'Receipt uploaded + auto-fill applied' })
       } else {
         throw new Error('No matching expense selected. Pick one from the list below.')
@@ -186,7 +185,7 @@ export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Pro
       {items.length > 0 && (
         <div className="px-5 pb-4 space-y-3">
           {items.map(item => (
-            <InvoiceCard key={item.id} item={item} allExpenses={allExpenses}
+            <InvoiceCard key={item.id} item={item} allExpenses={allExpenses} categoryMap={categoryMap}
               onRemove={() => setItems(prev => prev.filter(i => i.id !== item.id))}
               onOcrChange={patch => updateOcr(item.id, patch)}
               onSubmit={() => submitItem(item.id)}
@@ -200,9 +199,10 @@ export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Pro
   )
 }
 
-function InvoiceCard({ item, allExpenses, onRemove, onOcrChange, onSubmit, onToggleSplit, onSelectMatch }: {
+function InvoiceCard({ item, allExpenses, categoryMap, onRemove, onOcrChange, onSubmit, onToggleSplit, onSelectMatch }: {
   item: InvoiceItem
   allExpenses: Expense[]
+  categoryMap: Record<string, number>
   onRemove: () => void
   onOcrChange: (p: Partial<OcrResult>) => void
   onSubmit: () => void

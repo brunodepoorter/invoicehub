@@ -4,6 +4,7 @@ import { StatCard } from './components/StatCard'
 import { InvoiceUpload } from './components/InvoiceUpload'
 import { DeclareeExpenses } from './components/DeclareeExpenses'
 import type { Organization, Report, Expense } from './lib/types'
+import { getCategories } from './lib/api'
 
 const API = '/api'
 
@@ -68,6 +69,8 @@ export default function App() {
   const [reports, setReports] = useState<Report[]>([])
   const [unreported, setUnreported] = useState<Expense[]>([])
   const [loadingExpenses, setLoadingExpenses] = useState(false)
+  // category name → id map (built from fetched expenses + categories endpoint)
+  const [categoryMap, setCategoryMap] = useState<Record<string, number>>({})
 
   const allExpenses: Expense[] = [...unreported, ...reports.flatMap(r => r.expenses || [])]
 
@@ -123,6 +126,22 @@ export default function App() {
 
       setReports(repsWithExpenses)
       setUnreported(unreportedList)
+
+      // Build category name→id map from expense data + categories endpoint
+      const map: Record<string, number> = {}
+      const allExp = [...unreportedList, ...repsWithExpenses.flatMap((r: any) => r.expenses || [])]
+      allExp.forEach((e: any) => {
+        if (e.category && typeof e.category === 'object' && e.category.id && e.category.name) {
+          map[e.category.name] = e.category.id
+        }
+      })
+      // Also try the categories endpoint
+      try {
+        const catData = await getCategories(org.id)
+        const cats = catData.expense_categories || catData.categories || []
+        cats.forEach((c: { id: number; name: string }) => { map[c.name] = c.id })
+      } catch {}
+      setCategoryMap(map)
     } catch (e: any) {
       console.error('loadExpenses error:', e.message)
     } finally {
@@ -170,6 +189,7 @@ export default function App() {
               orgId={org.id}
               allExpenses={allExpenses}
               reports={reports}
+              categoryMap={categoryMap}
               onSubmitDone={loadExpenses}
             />
             <DeclareeExpenses
@@ -178,6 +198,7 @@ export default function App() {
               unreported={unreported}
               allExpenses={allExpenses}
               loading={loadingExpenses}
+              categoryMap={categoryMap}
               onRefresh={loadExpenses}
             />
           </>

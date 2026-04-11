@@ -14,6 +14,8 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const getOrganizations = () => req<{ organizations: Organization[] }>('GET', '/organizations')
+export const getCategories = (orgId: number) =>
+  req<{ expense_categories?: { id: number; name: string }[]; categories?: { id: number; name: string }[] }>('GET', `/organizations/${orgId}/categories`)
 export const getReports = (orgId: number) => req<{ reports: Report[] }>('GET', `/organizations/${orgId}/reports`)
 export const getReportExpenses = (orgId: number, reportId: number) => req<{ expenses: Expense[] }>('GET', `/organizations/${orgId}/reports/${reportId}/expenses`)
 export const getUserExpenses = (orgId: number, userId: number, selection?: string) =>
