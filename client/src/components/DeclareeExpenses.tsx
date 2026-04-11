@@ -54,7 +54,7 @@ export function DeclareeExpenses({ orgId, reports, unreported, allExpenses, load
     try {
       await updateExpense(orgId, expense.id, {
         category: rule.category,
-        tag1: TAG1_ID,
+        tag1_id: TAG1_ID,
         field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
       })
       onRefresh()

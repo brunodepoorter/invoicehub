@@ -88,7 +88,7 @@ app.post('/api/organizations/:orgId/expenses', async (req, res) => {
 // ── Update expense ────────────────────────────────────────────────────────────
 app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
   try {
-    const data = await dFetch(`${BASE}/api/v4/organizations/${req.params.orgId}/expenses/${req.params.expId}`, 'PUT', req.body);
+    const data = await dFetch(`${BASE}/api/v4/expenses/${req.params.expId}`, 'PUT', req.body);
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

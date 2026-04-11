@@ -96,7 +96,7 @@ export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Pro
           await uploadReceipt(orgId, m.expense.id, b64, item.file.name, item.file.type)
           await updateExpense(orgId, m.expense.id, {
             category: item.rule?.category || 'CMH Content marketing',
-            tag1: TAG1_ID,
+            tag1_id: TAG1_ID,
             field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
           })
         }
@@ -130,7 +130,7 @@ export function InvoiceUpload({ orgId, allExpenses, reports, onSubmitDone }: Pro
         if (item.rule) {
           await updateExpense(orgId, expId, {
             category: item.rule.category,
-            tag1: TAG1_ID,
+            tag1_id: TAG1_ID,
             field_values: [{ field_id: KOSTENPLAATS_FIELD_ID, option_id: KOSTENPLAATS_OPTION_ID }],
           })
         }
