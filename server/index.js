@@ -162,34 +162,51 @@ app.put('/api/organizations/:orgId/expenses/:expId/report', async (req, res) => 
 });
 
 // ── Upload receipt ────────────────────────────────────────────────────────────
-// Declaree uses multipart form upload to /resources with api_key as query param
 app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res) => {
   try {
     const { fileBase64, fileName, mimeType } = req.body;
     if (!fileBase64) return res.status(400).json({ error: 'No file data' });
 
+    const { orgId, expId } = req.params;
     const buffer = Buffer.from(fileBase64, 'base64');
-    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+    const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+    const md5    = crypto.createHash('md5').update(buffer).digest('hex');
     const createdAt = new Date().toISOString().split('T')[0];
+    const ct = mimeType || 'application/pdf';
 
-    const form = new FormData();
-    form.append('file', buffer, { filename: fileName, contentType: mimeType || 'application/pdf' });
-    form.append('creation_date', createdAt);
-    form.append('hash', hash);
+    function makeForm(hashVal) {
+      const f = new FormData();
+      f.append('file', buffer, { filename: fileName, contentType: ct });
+      f.append('creation_date', createdAt);
+      if (hashVal !== null) f.append('hash', hashVal);
+      return f;
+    }
 
-    // encodeURIComponent is critical — the key contains + and = which break query strings
-    // form.getHeaders() is required so node-fetch includes the correct Content-Type with multipart boundary
-    const uploadUrl = `${BASE}/api/v4/organizations/${req.params.orgId}/expenses/${req.params.expId}/resources`;
-    const r = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` },
-      body: form,
-    });
-    const text = await r.text();
-    console.log(`[UPLOAD] expense ${req.params.expId} → ${r.status}: ${text.substring(0,200)}`);
-    if (!r.ok) return res.status(500).json({ error: `Upload failed ${r.status}: ${text.substring(0,300)}` });
-    try { res.json(JSON.parse(text)); }
-    catch { res.json({ raw: text }); }
+    // Try multiple strategies: v4/v41, Bearer/api_key, sha256/md5/no-hash
+    const strategies = [
+      [`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', sha256],
+      [`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', md5],
+      [`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', null],
+      [`${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', sha256],
+      [`${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', md5],
+      [`${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', null],
+    ];
+
+    for (const [url, authType, hashVal] of strategies) {
+      const form = makeForm(hashVal);
+      const hdrs = authType === 'Bearer'
+        ? { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` }
+        : { ...form.getHeaders() };
+      const r = await fetch(url, { method: 'POST', headers: hdrs, body: form });
+      const text = await r.text();
+      const label = `${url.replace(BASE,'')} hash=${hashVal?.substring(0,6) ?? 'none'}`;
+      console.log(`[UPLOAD] ${label} → ${r.status}: ${text.substring(0,150)}`);
+      if (r.ok) {
+        try { return res.json(JSON.parse(text)); }
+        catch { return res.json({ raw: text }); }
+      }
+    }
+    res.status(500).json({ error: 'All upload strategies failed — check server logs' });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
