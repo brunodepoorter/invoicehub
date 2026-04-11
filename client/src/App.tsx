@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Receipt, DollarSign, TrendingUp, Layers, Lock } from 'lucide-react'
+import { Receipt, DollarSign, TrendingUp, Layers } from 'lucide-react'
 import { StatCard } from './components/StatCard'
 import { InvoiceUpload } from './components/InvoiceUpload'
 import { DeclareeExpenses } from './components/DeclareeExpenses'
 import type { Organization, Report, Expense } from './lib/types'
 
-const PASSWORD = 'Vh9#mKqR2nXpL7wBt4Yd8Fs3Jc6Az1Eg5NhPuQo'
-const SESSION_KEY = 'ih_auth'
+const API = '/api'
 
 const API = '/api'
 
@@ -65,7 +64,6 @@ function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === '1')
   const [org, setOrg] = useState<Organization | null>(null)
   const [orgError, setOrgError] = useState('')
   const [userId, setUserId] = useState<number | null>(null)
@@ -73,10 +71,7 @@ export default function App() {
   const [unreported, setUnreported] = useState<Expense[]>([])
   const [loadingExpenses, setLoadingExpenses] = useState(false)
 
-  const allExpenses: Expense[] = [
-    ...unreported,
-    ...reports.flatMap(r => r.expenses || [])
-  ]
+  const allExpenses: Expense[] = [...unreported, ...reports.flatMap(r => r.expenses || [])]
 
   async function init() {
     try {
@@ -137,14 +132,11 @@ export default function App() {
     }
   }, [org, userId])
 
-  useEffect(() => { if (authed) init() }, [authed])
+  useEffect(() => { init() }, [])
   useEffect(() => { if (org) loadExpenses() }, [org])
-
-  if (!authed) return <PasswordGate onUnlock={() => setAuthed(true)} />
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-6xl px-6 py-5">
           <div className="flex items-center gap-3">
@@ -158,9 +150,7 @@ export default function App() {
           </div>
         </div>
       </header>
-
       <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
-        {/* Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard label="Status" value={orgError ? 'Error' : 'Live'} sub={orgError || 'Connected to Declaree API'} icon={<Layers className="h-5 w-5 text-accent" />} live={!orgError} />
           <StatCard label="Declaree Org" value={org?.name || (orgError ? '—' : 'Loading…')} sub={org ? 'Connected' : 'Connecting…'} icon={<DollarSign className="h-5 w-5 text-accent" />} />

@@ -25,5 +25,3 @@ export function StatCard({ label, value, sub, icon, live }: Props) {
     </div>
   )
 }
-
-export default StatCard
