@@ -29,7 +29,11 @@ async function dFetch(url, method = 'GET', body = null) {
   const r = await fetch(url, opts);
   const text = await r.text();
   console.log(`[${method}] ${url.replace(BASE,'')} → ${r.status}`);
-  if (!r.ok) throw new Error(`Declaree ${r.status}: ${text.substring(0,200)}`);
+  if (!r.ok) {
+    console.error(`[${method}] ERROR body:`, text.substring(0, 500));
+    if (body) console.error(`[${method}] sent body:`, JSON.stringify(body).substring(0, 300));
+    throw new Error(`Declaree ${r.status}: ${text.substring(0, 400)}`);
+  }
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
@@ -80,7 +84,11 @@ app.get('/api/organizations/:orgId/expenses', async (req, res) => {
 // ── Create expense ────────────────────────────────────────────────────────────
 app.post('/api/organizations/:orgId/expenses', async (req, res) => {
   try {
-    const data = await dFetch(`${BASE}/api/v4/organizations/${req.params.orgId}/expenses`, 'POST', req.body);
+    // Declaree v4 uses "date" not "expense_date" for creation
+    const body = { ...req.body };
+    if (body.expense_date && !body.date) { body.date = body.expense_date; delete body.expense_date; }
+    console.log('[POST] creating expense with body:', JSON.stringify(body));
+    const data = await dFetch(`${BASE}/api/v4/organizations/${req.params.orgId}/expenses`, 'POST', body);
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
