@@ -10,8 +10,6 @@
     --foreground: 220 25% 10%;
     --card: 0 0% 100%;
     --card-foreground: 220 25% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 10%;
     --primary: 220 25% 10%;
     --primary-foreground: 210 20% 98%;
     --secondary: 215 20% 95%;
@@ -27,20 +25,26 @@
     --ring: 155 60% 40%;
     --radius: 0.75rem;
     --warning: 38 92% 50%;
+    --success: 155 60% 40%;
     --shadow-card: 0 1px 3px 0 hsl(220 25% 10% / 0.04), 0 4px 12px -2px hsl(220 25% 10% / 0.06);
     --shadow-card-hover: 0 2px 8px 0 hsl(220 25% 10% / 0.06), 0 8px 24px -4px hsl(220 25% 10% / 0.1);
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
   }
-  * { @apply border-border; box-sizing: border-box; }
+}
+
+@layer base {
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
   }
-  input, select, textarea, button { font-family: inherit; }
+  h1, h2, h3, h4, h5, h6 { font-family: var(--font-display); }
 }
 
 @layer utilities {
   .shadow-card { box-shadow: var(--shadow-card); }
   .shadow-card-hover { box-shadow: var(--shadow-card-hover); }
-  .font-display { font-family: 'Space Grotesk', sans-serif; }
+  .font-display { font-family: var(--font-display); }
 }
