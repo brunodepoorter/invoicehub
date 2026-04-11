@@ -1,10 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch';
-import FormData from 'form-data';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+// Use native Node 18 fetch + FormData + Blob — form-data v4 is incompatible with node-fetch v3
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -111,41 +110,7 @@ app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
   const url = `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`;
 
   console.log(`[UPDATE] body received:`, JSON.stringify(req.body).substring(0, 300));
-  // 1. Try multipart form-data (what Declaree mobile app likely uses)
-  for (const method of ['PUT', 'PATCH', 'POST']) {
-    try {
-      const form = new FormData();
-      for (const [k, v] of Object.entries(req.body)) {
-        if (Array.isArray(v)) {
-          v.forEach((item, i) => {
-            if (typeof item === 'object') {
-              for (const [ik, iv] of Object.entries(item)) {
-                form.append(`${k}[${i}][${ik}]`, String(iv));
-              }
-            } else {
-              form.append(`${k}[${i}]`, String(item));
-            }
-          });
-        } else {
-          form.append(k, String(v));
-        }
-      }
-      const r = await fetch(url, {
-        method,
-        headers: { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` },
-        body: form,
-      });
-      const text = await r.text();
-      console.log(`[UPDATE] ${method} multipart → ${r.status}: ${text.substring(0,300)}`);
-      if (r.ok) {
-        try { return res.json(JSON.parse(text)); } catch { return res.json({ raw: text }); }
-      }
-    } catch (e) {
-      console.log(`[UPDATE] ${method} multipart error: ${e.message}`);
-    }
-  }
-
-  // 2. Fallback: JSON body
+  // JSON body — the only documented write method for expenses
   for (const method of ['PUT', 'PATCH']) {
     try {
       const data = await dFetch(url, method, req.body);
@@ -203,24 +168,20 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
     const createdAt = new Date().toISOString().split('T')[0];
     const ct = mimeType || 'application/pdf';
 
-    // Strategy: multipart PUT/POST/PATCH directly on the expense endpoint
-    // (no separate resource endpoint documented in Declaree API v4)
+    // Use native Node 18 FormData + Blob (form-data npm v4 is incompatible with node-fetch v3)
+    const resourceUrl = `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`;
     for (const [method, url] of [
-      ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
-      ['POST',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
-      ['PATCH', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
-      // Also try old /resources path with different hashes
-      ['POST',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`],
-      ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`],
+      ['POST', resourceUrl],
+      ['PUT',  resourceUrl],
     ]) {
       for (const hashVal of [sha256, md5, null]) {
-        const form = new FormData();
-        form.append('file', buffer, { filename: fileName, contentType: ct });
+        const form = new globalThis.FormData();
+        form.append('file', new Blob([buffer], { type: ct }), fileName);
         form.append('creation_date', createdAt);
         if (hashVal !== null) form.append('hash', hashVal);
         const r = await fetch(url, {
           method,
-          headers: { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` },
+          headers: { 'Authorization': `Bearer ${DECLAREE_KEY}` },
           body: form,
         });
         const text = await r.text();
