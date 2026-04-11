@@ -105,46 +105,60 @@ app.post('/api/organizations/:orgId/expenses', async (req, res) => {
 });
 
 // ── Update expense ────────────────────────────────────────────────────────────
-// Try PATCH first (partial update), fall back to PUT with orgId in path
+// Try multiple strategies: PATCH/PUT on v4 and v41, with and without orgId
 app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
   const { orgId, expId } = req.params;
-  try {
-    let data;
+  const strategies = [
+    ['PATCH', `${BASE}/api/v4/expenses/${expId}`],
+    ['PUT',   `${BASE}/api/v4/expenses/${expId}`],
+    ['PATCH', `${BASE}/api/v41/expenses/${expId}`],
+    ['PUT',   `${BASE}/api/v41/expenses/${expId}`],
+    ['PATCH', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
+    ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
+    ['PATCH', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}`],
+    ['PUT',   `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}`],
+  ];
+  let lastErr = null;
+  for (const [method, url] of strategies) {
     try {
-      // Try PATCH on /api/v4/expenses/:id (standard partial-update REST)
-      data = await dFetch(`${BASE}/api/v4/expenses/${expId}`, 'PATCH', req.body);
-    } catch (e1) {
-      console.log('[UPDATE] PATCH failed, trying PUT with orgId:', e1.message.substring(0, 80));
-      try {
-        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PUT', req.body);
-      } catch (e2) {
-        console.log('[UPDATE] PUT with orgId failed, trying PATCH with orgId:', e2.message.substring(0, 80));
-        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PATCH', req.body);
-      }
+      const data = await dFetch(url, method, req.body);
+      console.log(`[UPDATE] success with ${method} ${url.replace(BASE,'')}`);
+      return res.json(data);
+    } catch (e) {
+      console.log(`[UPDATE] ${method} ${url.replace(BASE,'')} → ${e.message.substring(0,60)}`);
+      lastErr = e;
     }
-    res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  }
+  res.status(500).json({ error: lastErr?.message || 'All update strategies failed' });
 });
 
 // ── Assign to report ──────────────────────────────────────────────────────────
 app.put('/api/organizations/:orgId/expenses/:expId/report', async (req, res) => {
   const { orgId, expId } = req.params;
   const { reportId } = req.body;
-  try {
-    let data;
+  const strategies = [
+    ['PATCH', `${BASE}/api/v4/expenses/${expId}`,                                  { report_id: reportId }],
+    ['PUT',   `${BASE}/api/v4/expenses/${expId}`,                                  { report_id: reportId }],
+    ['PATCH', `${BASE}/api/v41/expenses/${expId}`,                                 { report_id: reportId }],
+    ['PATCH', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`,            { report_id: reportId }],
+    ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`,            { report_id: reportId }],
+    ['PATCH', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}`,           { report_id: reportId }],
+    // Some APIs use "report" not "report_id"
+    ['PATCH', `${BASE}/api/v4/expenses/${expId}`,                                  { report: reportId }],
+    ['PATCH', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}`,           { report: reportId }],
+  ];
+  let lastErr = null;
+  for (const [method, url, body] of strategies) {
     try {
-      data = await dFetch(`${BASE}/api/v4/expenses/${expId}`, 'PATCH', { report_id: reportId });
-    } catch (e1) {
-      console.log('[ASSIGN] PATCH failed, trying PUT:', e1.message.substring(0, 80));
-      try {
-        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PUT', { report_id: reportId });
-      } catch (e2) {
-        console.log('[ASSIGN] PUT failed, trying PATCH with orgId:', e2.message.substring(0, 80));
-        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PATCH', { report_id: reportId });
-      }
+      const data = await dFetch(url, method, body);
+      console.log(`[ASSIGN] success with ${method} ${url.replace(BASE,'')} body:${JSON.stringify(body)}`);
+      return res.json(data);
+    } catch (e) {
+      console.log(`[ASSIGN] ${method} ${url.replace(BASE,'')} → ${e.message.substring(0,60)}`);
+      lastErr = e;
     }
-    res.json(data);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  }
+  res.status(500).json({ error: lastErr?.message || 'All assign strategies failed' });
 });
 
 // ── Upload receipt ────────────────────────────────────────────────────────────
@@ -163,12 +177,14 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
     form.append('creation_date', createdAt);
     form.append('hash', hash);
 
-    const uploadUrl = `${BASE}/api/v41/organizations/${req.params.orgId}/expenses/${req.params.expId}/resources?api_key=${DECLAREE_KEY}`;
+    // encodeURIComponent is critical — the key contains + and = which break query strings
+    const uploadUrl = `${BASE}/api/v41/organizations/${req.params.orgId}/expenses/${req.params.expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`;
     const r = await fetch(uploadUrl, { method: 'POST', body: form });
     const text = await r.text();
-    console.log(`[UPLOAD] expense ${req.params.expId} → ${r.status}: ${text.substring(0,100)}`);
-    try { res.status(r.status).json(JSON.parse(text)); }
-    catch { res.status(r.status).json({ raw: text }); }
+    console.log(`[UPLOAD] expense ${req.params.expId} → ${r.status}: ${text.substring(0,200)}`);
+    if (!r.ok) return res.status(500).json({ error: `Upload failed ${r.status}: ${text.substring(0,300)}` });
+    try { res.json(JSON.parse(text)); }
+    catch { res.json({ raw: text }); }
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
