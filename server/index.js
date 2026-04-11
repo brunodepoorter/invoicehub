@@ -179,8 +179,12 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
 
     // encodeURIComponent is critical — the key contains + and = which break query strings
     // form.getHeaders() is required so node-fetch includes the correct Content-Type with multipart boundary
-    const uploadUrl = `${BASE}/api/v4/organizations/${req.params.orgId}/expenses/${req.params.expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`;
-    const r = await fetch(uploadUrl, { method: 'POST', headers: form.getHeaders(), body: form });
+    const uploadUrl = `${BASE}/api/v4/organizations/${req.params.orgId}/expenses/${req.params.expId}/resources`;
+    const r = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` },
+      body: form,
+    });
     const text = await r.text();
     console.log(`[UPLOAD] expense ${req.params.expId} → ${r.status}: ${text.substring(0,200)}`);
     if (!r.ok) return res.status(500).json({ error: `Upload failed ${r.status}: ${text.substring(0,300)}` });
