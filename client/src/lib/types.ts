@@ -3,16 +3,18 @@ export interface Organization {
   name: string
 }
 
-export interface User {
-  id: number
-  name: string
-  email: string
-}
-
 export interface FieldValue {
-  field_id: number
+  field_id?: number
+  field?: { name: string }
+  option?: { name: string }
   option_id?: number
   value?: string
+}
+
+export interface Resource {
+  id: number
+  filename?: string
+  url?: string
 }
 
 export interface Expense {
@@ -20,15 +22,15 @@ export interface Expense {
   description: string
   amount: number | string
   currency: string
-  date: string
-  category?: string
-  category_id?: number
-  tag1_id?: number
-  tags?: { id: number; name: string }[]
+  expense_date: string
+  date?: string
+  category?: { id: number; name: string } | string
+  tag1?: { id: number; name: string } | string
   field_values?: FieldValue[]
-  attachment_count?: number
-  has_attachment?: boolean
-  report_id?: number
+  custom_fields?: { name: string; value?: string }[]
+  resources?: Resource[]
+  report?: { id: number; name: string } | null
+  user_id?: number
   state?: number
 }
 
@@ -36,8 +38,11 @@ export interface Report {
   id: number
   name: string
   state: number
+  value?: number
+  billCount?: number
   expenses?: Expense[]
-  total?: number
+  user?: { fullName: string; email: string; id?: number }
+  history_items?: { actor?: { id: number } }[]
 }
 
 export interface OcrResult {
@@ -47,14 +52,7 @@ export interface OcrResult {
   description: string
 }
 
-export type InvoiceStatus =
-  | 'pending'
-  | 'scanning'
-  | 'ready'
-  | 'matching'
-  | 'submitting'
-  | 'done'
-  | 'error'
+export type InvoiceStatus = 'pending' | 'scanning' | 'ready' | 'matching' | 'submitting' | 'done' | 'error'
 
 export interface SplitMatch {
   expense: Expense
