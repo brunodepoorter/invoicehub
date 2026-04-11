@@ -105,31 +105,57 @@ app.post('/api/organizations/:orgId/expenses', async (req, res) => {
 });
 
 // ── Update expense ────────────────────────────────────────────────────────────
-// Try multiple strategies: PATCH/PUT on v4 and v41, with and without orgId
+// API docs say "form-encoded request bodies" — try multipart AND JSON, PATCH AND PUT
 app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
   const { orgId, expId } = req.params;
-  const strategies = [
-    ['PATCH', `${BASE}/api/v4/expenses/${expId}`],
-    ['PUT',   `${BASE}/api/v4/expenses/${expId}`],
-    ['PATCH', `${BASE}/api/v41/expenses/${expId}`],
-    ['PUT',   `${BASE}/api/v41/expenses/${expId}`],
-    ['PATCH', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
-    ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
-    ['PATCH', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}`],
-    ['PUT',   `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}`],
-  ];
-  let lastErr = null;
-  for (const [method, url] of strategies) {
+  const url = `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`;
+
+  // 1. Try multipart form-data (what Declaree mobile app likely uses)
+  for (const method of ['PUT', 'PATCH', 'POST']) {
     try {
-      const data = await dFetch(url, method, req.body);
-      console.log(`[UPDATE] success with ${method} ${url.replace(BASE,'')}`);
-      return res.json(data);
+      const form = new FormData();
+      for (const [k, v] of Object.entries(req.body)) {
+        if (Array.isArray(v)) {
+          v.forEach((item, i) => {
+            if (typeof item === 'object') {
+              for (const [ik, iv] of Object.entries(item)) {
+                form.append(`${k}[${i}][${ik}]`, String(iv));
+              }
+            } else {
+              form.append(`${k}[${i}]`, String(item));
+            }
+          });
+        } else {
+          form.append(k, String(v));
+        }
+      }
+      const r = await fetch(url, {
+        method,
+        headers: { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` },
+        body: form,
+      });
+      const text = await r.text();
+      console.log(`[UPDATE] ${method} multipart → ${r.status}: ${text.substring(0,100)}`);
+      if (r.ok) {
+        try { return res.json(JSON.parse(text)); } catch { return res.json({ raw: text }); }
+      }
     } catch (e) {
-      console.log(`[UPDATE] ${method} ${url.replace(BASE,'')} → ${e.message.substring(0,60)}`);
-      lastErr = e;
+      console.log(`[UPDATE] ${method} multipart error: ${e.message.substring(0,60)}`);
     }
   }
-  res.status(500).json({ error: lastErr?.message || 'All update strategies failed' });
+
+  // 2. Fallback: JSON body (original approach)
+  for (const method of ['PUT', 'PATCH']) {
+    try {
+      const data = await dFetch(url, method, req.body);
+      console.log(`[UPDATE] ${method} JSON → success`);
+      return res.json(data);
+    } catch (e) {
+      console.log(`[UPDATE] ${method} JSON → ${e.message.substring(0,60)}`);
+    }
+  }
+
+  res.status(500).json({ error: 'All update strategies failed' });
 });
 
 // ── Assign to report ──────────────────────────────────────────────────────────
@@ -162,6 +188,7 @@ app.put('/api/organizations/:orgId/expenses/:expId/report', async (req, res) => 
 });
 
 // ── Upload receipt ────────────────────────────────────────────────────────────
+// No dedicated POST endpoint in Declaree API docs — attach file via multipart PUT on expense
 app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res) => {
   try {
     const { fileBase64, fileName, mimeType } = req.body;
@@ -174,40 +201,33 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
     const createdAt = new Date().toISOString().split('T')[0];
     const ct = mimeType || 'application/pdf';
 
-    function makeForm(hashVal) {
-      const f = new FormData();
-      f.append('file', buffer, { filename: fileName, contentType: ct });
-      f.append('creation_date', createdAt);
-      if (hashVal !== null) f.append('hash', hashVal);
-      return f;
-    }
-
-    // Try POST and PUT, v4/v41, Bearer/api_key, sha256/md5/no-hash
-    const strategies = [
-      ['POST', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', sha256],
-      ['PUT',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', sha256],
-      ['POST', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', md5],
-      ['PUT',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', md5],
-      ['POST', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', null],
-      ['PUT',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', null],
-      ['POST', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', sha256],
-      ['PUT',  `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', sha256],
-      ['POST', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', null],
-      ['PUT',  `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', null],
-    ];
-
-    for (const [method, url, authType, hashVal] of strategies) {
-      const form = makeForm(hashVal);
-      const hdrs = authType === 'Bearer'
-        ? { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` }
-        : { ...form.getHeaders() };
-      const r = await fetch(url, { method, headers: hdrs, body: form });
-      const text = await r.text();
-      const label = `${method} ${url.replace(BASE,'')} hash=${hashVal?.substring(0,6) ?? 'none'}`;
-      console.log(`[UPLOAD] ${label} → ${r.status}: ${text.substring(0,150)}`);
-      if (r.ok) {
-        try { return res.json(JSON.parse(text)); }
-        catch { return res.json({ raw: text }); }
+    // Strategy: multipart PUT/POST/PATCH directly on the expense endpoint
+    // (no separate resource endpoint documented in Declaree API v4)
+    for (const [method, url] of [
+      ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
+      ['POST',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
+      ['PATCH', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`],
+      // Also try old /resources path with different hashes
+      ['POST',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`],
+      ['PUT',   `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`],
+    ]) {
+      for (const hashVal of [sha256, md5, null]) {
+        const form = new FormData();
+        form.append('file', buffer, { filename: fileName, contentType: ct });
+        form.append('creation_date', createdAt);
+        if (hashVal !== null) form.append('hash', hashVal);
+        const r = await fetch(url, {
+          method,
+          headers: { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` },
+          body: form,
+        });
+        const text = await r.text();
+        const label = `${method} ${url.replace(BASE,'')} hash=${hashVal?.substring(0,6) ?? 'none'}`;
+        console.log(`[UPLOAD] ${label} → ${r.status}: ${text.substring(0,100)}`);
+        if (r.ok) {
+          try { return res.json(JSON.parse(text)); }
+          catch { return res.json({ raw: text }); }
+        }
       }
     }
     res.status(500).json({ error: 'All upload strategies failed — check server logs' });
