@@ -144,8 +144,8 @@ Strip commas from numbers. Google invoices → 'Google Ads'. Meta/Facebook → '
 
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-opus-4-5-20251101', max_tokens: 300, messages: [{ role: 'user', content }] })
+      headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': process.env.ANTHROPIC_API_KEY || '' },
+      body: JSON.stringify({ model: 'claude-3-5-haiku-20241022', max_tokens: 300, messages: [{ role: 'user', content }] })
     });
     const d = await r.json();
     if (d.error) return res.status(500).json({ error: d.error.message });
