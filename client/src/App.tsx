@@ -7,8 +7,6 @@ import type { Organization, Report, Expense } from './lib/types'
 
 const API = '/api'
 
-const API = '/api'
-
 async function apiFetch(path: string) {
   const r = await fetch(API + path)
   if (!r.ok) throw new Error(`API error ${r.status}`)
