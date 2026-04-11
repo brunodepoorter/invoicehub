@@ -110,6 +110,7 @@ app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
   const { orgId, expId } = req.params;
   const url = `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`;
 
+  console.log(`[UPDATE] body received:`, JSON.stringify(req.body).substring(0, 300));
   // 1. Try multipart form-data (what Declaree mobile app likely uses)
   for (const method of ['PUT', 'PATCH', 'POST']) {
     try {
@@ -135,23 +136,23 @@ app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
         body: form,
       });
       const text = await r.text();
-      console.log(`[UPDATE] ${method} multipart → ${r.status}: ${text.substring(0,100)}`);
+      console.log(`[UPDATE] ${method} multipart → ${r.status}: ${text.substring(0,300)}`);
       if (r.ok) {
         try { return res.json(JSON.parse(text)); } catch { return res.json({ raw: text }); }
       }
     } catch (e) {
-      console.log(`[UPDATE] ${method} multipart error: ${e.message.substring(0,60)}`);
+      console.log(`[UPDATE] ${method} multipart error: ${e.message}`);
     }
   }
 
-  // 2. Fallback: JSON body (original approach)
+  // 2. Fallback: JSON body
   for (const method of ['PUT', 'PATCH']) {
     try {
       const data = await dFetch(url, method, req.body);
       console.log(`[UPDATE] ${method} JSON → success`);
       return res.json(data);
     } catch (e) {
-      console.log(`[UPDATE] ${method} JSON → ${e.message.substring(0,60)}`);
+      console.log(`[UPDATE] ${method} JSON → ${e.message.substring(0,300)}`);
     }
   }
 
@@ -196,6 +197,7 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
 
     const { orgId, expId } = req.params;
     const buffer = Buffer.from(fileBase64, 'base64');
+    console.log(`[UPLOAD] file: ${fileName} (${mimeType}) size=${buffer.length}b expense=${expId}`);
     const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
     const md5    = crypto.createHash('md5').update(buffer).digest('hex');
     const createdAt = new Date().toISOString().split('T')[0];
@@ -223,7 +225,7 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
         });
         const text = await r.text();
         const label = `${method} ${url.replace(BASE,'')} hash=${hashVal?.substring(0,6) ?? 'none'}`;
-        console.log(`[UPLOAD] ${label} → ${r.status}: ${text.substring(0,100)}`);
+        console.log(`[UPLOAD] ${label} → ${r.status}: ${text.substring(0,400)}`);
         if (r.ok) {
           try { return res.json(JSON.parse(text)); }
           catch { return res.json({ raw: text }); }
