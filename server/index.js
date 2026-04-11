@@ -105,19 +105,44 @@ app.post('/api/organizations/:orgId/expenses', async (req, res) => {
 });
 
 // ── Update expense ────────────────────────────────────────────────────────────
+// Try PATCH first (partial update), fall back to PUT with orgId in path
 app.put('/api/organizations/:orgId/expenses/:expId', async (req, res) => {
+  const { orgId, expId } = req.params;
   try {
-    const data = await dFetch(`${BASE}/api/v4/expenses/${req.params.expId}`, 'PUT', req.body);
+    let data;
+    try {
+      // Try PATCH on /api/v4/expenses/:id (standard partial-update REST)
+      data = await dFetch(`${BASE}/api/v4/expenses/${expId}`, 'PATCH', req.body);
+    } catch (e1) {
+      console.log('[UPDATE] PATCH failed, trying PUT with orgId:', e1.message.substring(0, 80));
+      try {
+        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PUT', req.body);
+      } catch (e2) {
+        console.log('[UPDATE] PUT with orgId failed, trying PATCH with orgId:', e2.message.substring(0, 80));
+        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PATCH', req.body);
+      }
+    }
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Assign to report ──────────────────────────────────────────────────────────
 app.put('/api/organizations/:orgId/expenses/:expId/report', async (req, res) => {
+  const { orgId, expId } = req.params;
+  const { reportId } = req.body;
   try {
-    const { reportId } = req.body;
-    // Declaree v4 uses report_id in the expense update
-    const data = await dFetch(`${BASE}/api/v4/expenses/${req.params.expId}`, 'PUT', { report_id: reportId });
+    let data;
+    try {
+      data = await dFetch(`${BASE}/api/v4/expenses/${expId}`, 'PATCH', { report_id: reportId });
+    } catch (e1) {
+      console.log('[ASSIGN] PATCH failed, trying PUT:', e1.message.substring(0, 80));
+      try {
+        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PUT', { report_id: reportId });
+      } catch (e2) {
+        console.log('[ASSIGN] PUT failed, trying PATCH with orgId:', e2.message.substring(0, 80));
+        data = await dFetch(`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}`, 'PATCH', { report_id: reportId });
+      }
+    }
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
