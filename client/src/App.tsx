@@ -3,11 +3,18 @@ import { Receipt, DollarSign, TrendingUp, Layers, Lock } from 'lucide-react'
 import { StatCard } from './components/StatCard'
 import { InvoiceUpload } from './components/InvoiceUpload'
 import { DeclareeExpenses } from './components/DeclareeExpenses'
-import { getOrganizations, getReports, getReportExpenses, getUnreportedExpenses } from './lib/api'
 import type { Organization, Report, Expense } from './lib/types'
 
 const PASSWORD = 'Vh9#mKqR2nXpL7wBt4Yd8Fs3Jc6Az1Eg5NhPuQo'
 const SESSION_KEY = 'ih_auth'
+
+const API = '/api'
+
+async function apiFetch(path: string) {
+  const r = await fetch(API + path)
+  if (!r.ok) throw new Error(`API error ${r.status}`)
+  return r.json()
+}
 
 function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [value, setValue] = useState('')
@@ -61,10 +68,10 @@ export default function App() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === '1')
   const [org, setOrg] = useState<Organization | null>(null)
   const [orgError, setOrgError] = useState('')
+  const [userId, setUserId] = useState<number | null>(null)
   const [reports, setReports] = useState<Report[]>([])
   const [unreported, setUnreported] = useState<Expense[]>([])
   const [loadingExpenses, setLoadingExpenses] = useState(false)
-  const [initialized, setInitialized] = useState(false)
 
   const allExpenses: Expense[] = [
     ...unreported,
@@ -73,11 +80,11 @@ export default function App() {
 
   async function init() {
     try {
-      const orgs = await getOrganizations()
-      const arr = Array.isArray(orgs) ? orgs : (orgs as any).organizations || []
-      if (!arr.length) throw new Error('No organization found')
-      setOrg(arr[0])
-      setInitialized(true)
+      // GET /api/organizations → data.organizations[0]
+      const data = await apiFetch('/organizations')
+      const orgs = data.organizations || (Array.isArray(data) ? data : [])
+      if (!orgs.length) throw new Error('No organization found')
+      setOrg(orgs[0])
     } catch (e: any) {
       setOrgError(e.message)
     }
@@ -87,29 +94,48 @@ export default function App() {
     if (!org) return
     setLoadingExpenses(true)
     try {
-      const [repsRaw, unrep] = await Promise.all([
-        getReports(org.id),
-        getUnreportedExpenses(org.id),
-      ])
-      const reps: Report[] = Array.isArray(repsRaw) ? repsRaw : (repsRaw as any).reports || []
-      const unreportedArr: Expense[] = Array.isArray(unrep) ? unrep : (unrep as any).expenses || []
+      // 1. Get reports
+      const repData = await apiFetch(`/organizations/${org.id}/reports`)
+      const allReports: any[] = repData.reports || []
+      const openReports = allReports.filter((r: any) => r.state <= 1)
+
+      // 2. Extract userId from report history_items
+      let uid: number | null = userId
+      if (!uid) {
+        for (const report of openReports) {
+          const actorId = report?.history_items?.[0]?.actor?.id
+          if (actorId) { uid = actorId; setUserId(actorId); break; }
+        }
+      }
+
+      // 3. Load report expenses in parallel (skip if billCount === 0)
       const repsWithExpenses = await Promise.all(
-        reps.map(async rep => {
+        openReports.map(async (rep: any) => {
+          if (rep.billCount === 0) return { ...rep, expenses: [] }
           try {
-            const exps = await getReportExpenses(rep.id)
-            const arr: Expense[] = Array.isArray(exps) ? exps : (exps as any).expenses || []
-            return { ...rep, expenses: arr }
+            const d = await apiFetch(`/organizations/${org.id}/reports/${rep.id}/expenses`)
+            return { ...rep, expenses: d.expenses || [] }
           } catch { return { ...rep, expenses: [] } }
         })
       )
+
+      // 4. Load unreported expenses (requires userId)
+      let unreportedList: Expense[] = []
+      if (uid) {
+        try {
+          const d = await apiFetch(`/organizations/${org.id}/users/${uid}/expenses?selection=unreported`)
+          unreportedList = d.expenses || []
+        } catch {}
+      }
+
       setReports(repsWithExpenses)
-      setUnreported(unreportedArr)
+      setUnreported(unreportedList)
     } catch (e: any) {
-      console.error('Failed to load expenses:', e.message)
+      console.error('loadExpenses error:', e.message)
     } finally {
       setLoadingExpenses(false)
     }
-  }, [org])
+  }, [org, userId])
 
   useEffect(() => { if (authed) init() }, [authed])
   useEffect(() => { if (org) loadExpenses() }, [org])
@@ -136,21 +162,33 @@ export default function App() {
       <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
         {/* Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard title="Status" value={orgError ? 'Error' : 'Live'} subtitle={orgError || 'Connected to Declaree API'} icon={Layers} index={0} />
-          <StatCard title="Declaree Org" value={org?.name || (orgError ? '—' : 'Loading…')} subtitle={org ? 'Connected' : 'Connecting…'} icon={DollarSign} index={1} />
-          <StatCard title="Sync" value="Real-time" subtitle="AI-powered invoice OCR" icon={TrendingUp} index={2} />
+          <StatCard label="Status" value={orgError ? 'Error' : 'Live'} sub={orgError || 'Connected to Declaree API'} icon={<Layers className="h-5 w-5 text-accent" />} live={!orgError} />
+          <StatCard label="Declaree Org" value={org?.name || (orgError ? '—' : 'Loading…')} sub={org ? 'Connected' : 'Connecting…'} icon={<DollarSign className="h-5 w-5 text-accent" />} />
+          <StatCard label="Sync" value="Real-time" sub="AI-powered invoice OCR" icon={<TrendingUp className="h-5 w-5 text-accent" />} />
         </div>
 
         {orgError && (
-          <div className="px-4 py-3 rounded-lg border border-destructive/30 bg-destructive/5 text-sm text-destructive">
-            <strong>Connection error:</strong> {orgError}
+          <div className="px-4 py-3 bg-destructive/10 border border-destructive/30 rounded-lg text-sm text-destructive">
+            Connection error: {orgError}
           </div>
         )}
 
-        {initialized && org && (
+        {org && (
           <>
-            <InvoiceUpload orgId={org.id} allExpenses={allExpenses} reports={reports} onSubmitDone={loadExpenses} />
-            <DeclareeExpenses orgId={org.id} reports={reports} unreported={unreported} allExpenses={allExpenses} loading={loadingExpenses} onRefresh={loadExpenses} />
+            <InvoiceUpload
+              orgId={org.id}
+              allExpenses={allExpenses}
+              reports={reports}
+              onSubmitDone={loadExpenses}
+            />
+            <DeclareeExpenses
+              orgId={org.id}
+              reports={reports}
+              unreported={unreported}
+              allExpenses={allExpenses}
+              loading={loadingExpenses}
+              onRefresh={loadExpenses}
+            />
           </>
         )}
       </main>

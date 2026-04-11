@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: invoicehub
+    runtime: node
+    buildCommand: "cd client && npm install && npm run build && cd ../server && npm install"
+    startCommand: "node server/index.js"
+    envVars:
+      - key: DECLAREE_API_KEY
+        value: NJWB0qJswx0pbZg3MxGu7iL+NQXWqjeAtUZhTQ46Jp8=
+      - key: NODE_VERSION
+        value: 20
