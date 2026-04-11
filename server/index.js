@@ -175,10 +175,11 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
       ['PUT',  resourceUrl],
     ]) {
       for (const hashVal of [sha256, md5, null]) {
+        // Symfony forms namespace fields under the form name: resource[file], resource[creation_date]
         const form = new globalThis.FormData();
-        form.append('file', new Blob([buffer], { type: ct }), fileName);
-        form.append('creation_date', createdAt);
-        if (hashVal !== null) form.append('hash', hashVal);
+        form.append('resource[file]', new Blob([buffer], { type: ct }), fileName);
+        form.append('resource[creation_date]', createdAt);
+        if (hashVal !== null) form.append('resource[hash]', hashVal);
         const r = await fetch(url, {
           method,
           headers: { 'Authorization': `Bearer ${DECLAREE_KEY}` },
