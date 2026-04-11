@@ -142,7 +142,7 @@ export default function App() {
               <Receipt className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold font-display text-foreground">InvoiceHub</h1>
+              <h1 className="text-lg font-bold font-display text-foreground flex items-center gap-2">InvoiceHub <span className="text-xs font-normal text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">v1.1</span></h1>
               <p className="text-xs text-muted-foreground">All your invoices, one place</p>
             </div>
           </div>
