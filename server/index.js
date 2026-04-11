@@ -182,24 +182,28 @@ app.post('/api/organizations/:orgId/expenses/:expId/resources', async (req, res)
       return f;
     }
 
-    // Try multiple strategies: v4/v41, Bearer/api_key, sha256/md5/no-hash
+    // Try POST and PUT, v4/v41, Bearer/api_key, sha256/md5/no-hash
     const strategies = [
-      [`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', sha256],
-      [`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', md5],
-      [`${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', null],
-      [`${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', sha256],
-      [`${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', md5],
-      [`${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', null],
+      ['POST', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', sha256],
+      ['PUT',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', sha256],
+      ['POST', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', md5],
+      ['PUT',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', md5],
+      ['POST', `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', null],
+      ['PUT',  `${BASE}/api/v4/organizations/${orgId}/expenses/${expId}/resources`,  'Bearer', null],
+      ['POST', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', sha256],
+      ['PUT',  `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', sha256],
+      ['POST', `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', null],
+      ['PUT',  `${BASE}/api/v41/organizations/${orgId}/expenses/${expId}/resources?api_key=${encodeURIComponent(DECLAREE_KEY)}`, 'apikey', null],
     ];
 
-    for (const [url, authType, hashVal] of strategies) {
+    for (const [method, url, authType, hashVal] of strategies) {
       const form = makeForm(hashVal);
       const hdrs = authType === 'Bearer'
         ? { ...form.getHeaders(), 'Authorization': `Bearer ${DECLAREE_KEY}` }
         : { ...form.getHeaders() };
-      const r = await fetch(url, { method: 'POST', headers: hdrs, body: form });
+      const r = await fetch(url, { method, headers: hdrs, body: form });
       const text = await r.text();
-      const label = `${url.replace(BASE,'')} hash=${hashVal?.substring(0,6) ?? 'none'}`;
+      const label = `${method} ${url.replace(BASE,'')} hash=${hashVal?.substring(0,6) ?? 'none'}`;
       console.log(`[UPLOAD] ${label} → ${r.status}: ${text.substring(0,150)}`);
       if (r.ok) {
         try { return res.json(JSON.parse(text)); }
