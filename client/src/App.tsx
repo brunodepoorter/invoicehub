@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Receipt, DollarSign, TrendingUp, Layers } from 'lucide-react'
 import { StatCard } from './components/StatCard'
-import { InvoiceUpload } from './components/InvoiceUpload'
 import { DeclareeExpenses } from './components/DeclareeExpenses'
 import type { Organization, Report, Expense } from './lib/types'
 import { getCategories } from './lib/api'
@@ -185,13 +184,6 @@ export default function App() {
 
         {org && (
           <>
-            <InvoiceUpload
-              orgId={org.id}
-              allExpenses={allExpenses}
-              reports={reports}
-              categoryMap={categoryMap}
-              onSubmitDone={loadExpenses}
-            />
             <DeclareeExpenses
               orgId={org.id}
               reports={reports}
